@@ -1,0 +1,17 @@
+{
+  "name": "clinic-tracker",
+  "version": "1.0.0",
+  "description": "Galston area clinic occupancy tracker — Galston Health & Back on Track",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "scan":  "node scanner.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-cron": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
