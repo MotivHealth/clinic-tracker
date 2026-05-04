@@ -57,10 +57,6 @@ body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:
 .vbar-bg{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
 .vbar-fill{height:100%;border-radius:3px}
 .vpct{font-size:11px;font-weight:700;text-align:right}
-.hist-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border);flex-wrap:wrap}
-.hist-week{font-size:11px;font-weight:600;color:var(--text-2);min-width:170px}
-.hist-bars{display:flex;gap:6px;flex:1;flex-wrap:wrap}
-.hbar{height:20px;border-radius:4px;padding:0 8px;font-size:10px;font-weight:600;display:flex;align-items:center;min-width:60px}
 .loader{text-align:center;padding:50px;color:var(--text-3);font-size:13px}
 .divider{height:1px;background:var(--border);margin:20px 0}
 </style>
@@ -100,12 +96,7 @@ function renderVelocity(weekScans){var latest=weekScans[weekScans.length-1];var 
 function renderHistory(scans){
   if(!scans||!scans.length){document.getElementById('panel-history').innerHTML='<div class="loader">No history yet — check back as weeks pass.</div>';return;}
   var byWeek={};
-  scans.forEach(function(s){
-    var ws=s.currentWeekStart||(s.weeks&&s.weeks[0]&&s.weeks[0].weekStart)||(s.weekStart);
-    if(!ws)return;
-    if(!byWeek[ws])byWeek[ws]=[];
-    byWeek[ws].push(s);
-  });
+  scans.forEach(function(s){var ws=s.currentWeekStart||(s.weeks&&s.weeks[0]&&s.weeks[0].weekStart)||(s.weekStart);if(!ws)return;if(!byWeek[ws])byWeek[ws]=[];byWeek[ws].push(s);});
   var weeks=Object.keys(byWeek).sort().reverse();
   var html='';
   weeks.forEach(function(ws,idx){
@@ -118,21 +109,23 @@ function renderHistory(scans){
     var co=occ(tb,tc);
     var isFirst=idx===0;
     html+='<div style="margin-bottom:32px">';
-    // Week header
     html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">';
     html+='<span style="font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">'+week.weekLabel+'</span>';
     if(isFirst)html+='<span class="badge badge-past">most recent</span>';
     html+='<span style="font-size:10px;color:var(--text-3)">'+wScans.length+' scan'+(wScans.length!==1?'s':'')+' · latest '+fmtTime(latest.ts)+'</span>';
     html+='<span style="font-size:12px;font-weight:700;color:'+occCol(co)+';margin-left:auto">'+co+'% combined</span>';
     html+='</div>';
-    // Full day-by-day grid for each clinic
-    Object.entries(week.clinics).forEach(function(ce){
-      html+=renderClinicGrid(ce[0],ce[1],week.dayLabels);
-    });
-    // If multiple scans this week, show velocity
+    Object.entries(week.clinics).forEach(function(ce){html+=renderClinicGrid(ce[0],ce[1],week.dayLabels);});
     if(wScans.length>1)html+=renderVelocity(wScans);
     if(idx<weeks.length-1)html+='<div class="divider"></div>';
     html+='</div>';
   });
   document.getElementById('panel-history').innerHTML=html||'<div class="loader">No history.</div>';
 }
+function showTab(name){document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});document.getElementById('panel-'+name).classList.add('active');document.querySelector('.tab[onclick="showTab(\''+name+'\')"]').classList.add('active');}
+window.showTab=showTab;window.triggerScan=triggerScan;window.loadAll=loadAll;
+loadAll();
+setInterval(loadAll,300000);
+</script>
+</body>
+</html>
