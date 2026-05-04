@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Galston Clinic Tracker</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#F7F7F5;--surface:#FFFFFF;--border:#E4E4E0;--text-1:#1A1A18;--text-2:#5A5A56;--text-3:#9A9A96;--galston:#3266AD;--bot:#D85A30;--green:#3D9A22;--amber:#C47D00;--red:#C42B2B;--radius:8px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:14px}
+.app{max-width:960px;margin:0 auto;padding:24px 16px 60px}
+.hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px}
+.hdr h1{font-size:20px;font-weight:600;letter-spacing:-.3px}
+.hdr p{font-size:12px;color:var(--text-2);margin-top:3px}
+.refresh-btn{flex-shrink:0;padding:7px 14px;font-size:12px;font-weight:500;background:var(--text-1);color:#fff;border:none;border-radius:20px;cursor:pointer;transition:opacity .15s}
+.refresh-btn:hover{opacity:.8}
+.refresh-btn:disabled{opacity:.4;cursor:default}
+.summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+.pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500;border:1.5px solid}
+.month-nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
+.mtab{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text-2);transition:all .15s}
+.mtab:hover{border-color:var(--text-2)}
+.mtab.active{background:var(--text-1);color:#fff;border-color:var(--text-1)}
+.clinic-section{margin-bottom:28px}
+.clinic-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.clinic-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.clinic-hdr-name{font-size:14px;font-weight:600}
+.clinic-hdr-occ{font-size:12px;color:var(--text-2)}
+.grid{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;margin-bottom:8px}
+.grid-row{display:grid;border-bottom:1px solid var(--border)}
+.grid-row:last-child{border-bottom:none}
+.grid-row.header{background:var(--bg)}
+.cell{padding:8px 6px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:52px}
+.cell.name-cell{align-items:flex-start;padding:8px 12px;justify-content:center}
+.prac-name{font-size:12px;font-weight:500;color:var(--text-1);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.prac-role{font-size:10px;color:var(--text-3);margin-top:1px}
+.day-hdr{font-size:10px;font-weight:600;color:var(--text-2);text-align:center;text-transform:uppercase;letter-spacing:.04em}
+.occ-pct{font-size:13px;font-weight:600}
+.occ-sub{font-size:10px;color:var(--text-3);margin-top:1px}
+.occ-bar{width:80%;height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:3px}
+.occ-fill{height:100%;border-radius:2px}
+.off{font-size:11px;color:var(--text-3)}
+.week-block{margin-bottom:20px}
+.week-lbl{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.week-lbl span{font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em}
+.current-tag{font-size:10px;font-weight:600;background:#E6F1FB;color:#1A4A8C;padding:2px 8px;border-radius:10px}
+.scan-tag{font-size:10px;color:var(--text-3);font-weight:400}
+.vel-row{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 16px;margin-bottom:12px}
+.vel-row h3{font-size:11px;font-weight:600;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em;margin-bottom:10px}
+.vel-chart{display:flex;flex-direction:column;gap:6px}
+.vel-prac{display:grid;grid-template-columns:100px 1fr 36px;gap:8px;align-items:center;font-size:11px}
+.vel-name{color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vel-bar-bg{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.vel-bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.vel-pct{font-size:11px;font-weight:600;text-align:right}
+.loader{text-align:center;padding:60px 20px;color:var(--text-3);font-size:13px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="hdr">
+    <div>
+      <h1>Galston Clinic Tracker</h1>
+      <p id="hdr-sub">Loading…</p>
+    </div>
+    <button class="refresh-btn" id="refresh-btn" onclick="triggerScan()">Scan now</button>
+  </div>
+  <div class="summary" id="summary"></div>
+  <div class="month-nav" id="month-nav"></div>
+  <div id="content"><div class="loader">Loading data…</div></div>
+</div>
+<script>
+const DAYS=['Mon','Tue','Wed','Thu','Fri'];
+const COL={galston:'#3266AD',bot:'#D85A30'};
+const occColor=v=>v>=75?'#C42B2B':v>=50?'#C47D00':v>=25?'#B56A00':'#3D9A22';
+let allScans=[],curMonth=null;
+
+async function fetchScans(){const r=await fetch('/api/scans');if(!r.ok)throw new Error('API '+r.status);return r.json();}
+
+async function triggerScan(){
+  const btn=document.getElementById('refresh-btn');
+  btn.disabled=true;btn.textContent='Scanning…';
+  try{await fetch('/api/scan',{method:'POST'});await loadAll();}
+  catch(e){alert('Scan failed: '+e.message);}
+  finally{btn.disabled=false;btn.textContent='Scan now';}
+}
+
+async function loadAll(){
+  try{
+    allScans=await fetchScans();
+    if(!allScans.length){document.getElementById('content').innerHTML='<div class="loader">No scans yet — click Scan now to start.</div>';return;}
+    const latest=allScans[allScans.length-1];
+    document.getElementById('hdr-sub').textContent='Last scanned '+new Date(latest.ts).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+' · '+allScans.length+' total scans';
+    renderSummary(latest);
+    renderMonthNav();
+    renderMonth();
+  }catch(e){document.getElementById('content').innerHTML='<div class="loader">Error: '+e.message+'</div>';}
+}
+
+function renderSummary(scan){
+  document.getElementById('summary').innerHTML=Object.entries(scan.clinics).map(([key,clinic])=>{
+    let tc=0,tb=0;
+    Object.values(clinic.pracs).forEach(p=>{tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});
+    const pct=tc>0?Math.round((tb/tc)*100):0,col=occColor(pct);
+    return`<span class="pill" style="color:${col};border-color:${col}20;background:${col}08"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${COL[key]};margin-right:5px;vertical-align:middle"></span>${clinic.name.split(' ').slice(0,2).join(' ')}: ${pct}%</span>`;
+  }).join('');
+}
+
+function getMonthKey(ws){const[y,m]=ws.split('-');return`${y}-${m}`;}
+function monthLabel(key){const[y,m]=key.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-AU',{month:'long',year:'numeric'});}
+
+function renderMonthNav(){
+  const months=[...new Set(allScans.map(s=>getMonthKey(s.weekStart)))].sort().reverse();
+  if(!curMonth||!months.includes(curMonth))curMonth=months[0];
+  document.getElementById('month-nav').innerHTML=months.map(m=>`<button class="mtab${m===curMonth?' active':''}" onclick="selectMonth('${m}')">${monthLabel(m)}</button>`).join('');
+}
+
+function selectMonth(m){curMonth=m;renderMonthNav();renderMonth();}
+
+function getCurrentWeekStart(){
+  const now=new Date(),dow=now.getDay(),mon=new Date(now);
+  mon.setDate(now.getDate()-(dow===0?6:dow-1));
+  return`${mon.getFullYear()}-${mon.getMonth()+1}-${mon.getDate()}`;
+}
+
+function fmtTime(ts
