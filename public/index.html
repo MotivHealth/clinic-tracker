@@ -6,20 +6,18 @@
 <title>Galston Clinic Tracker</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#F7F7F5;--surface:#FFFFFF;--border:#E4E4E0;--text-1:#1A1A18;--text-2:#5A5A56;--text-3:#9A9A96;--galston:#3266AD;--bot:#D85A30;--green:#3D9A22;--amber:#C47D00;--red:#C42B2B;--radius:8px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+:root{--bg:#F7F7F5;--surface:#FFFFFF;--border:#E4E4E0;--text-1:#1A1A18;--text-2:#5A5A56;--text-3:#9A9A96;--galston:#3266AD;--bot:#D85A30;--radius:8px;--font:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
 body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:14px}
 .app{max-width:960px;margin:0 auto;padding:24px 16px 60px}
 .hdr{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;gap:12px}
 .hdr h1{font-size:20px;font-weight:600;letter-spacing:-.3px}
 .hdr p{font-size:12px;color:var(--text-2);margin-top:3px}
-.refresh-btn{flex-shrink:0;padding:7px 14px;font-size:12px;font-weight:500;background:var(--text-1);color:#fff;border:none;border-radius:20px;cursor:pointer;transition:opacity .15s}
-.refresh-btn:hover{opacity:.8}
+.refresh-btn{flex-shrink:0;padding:7px 14px;font-size:12px;font-weight:500;background:var(--text-1);color:#fff;border:none;border-radius:20px;cursor:pointer}
 .refresh-btn:disabled{opacity:.4;cursor:default}
 .summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
 .pill{padding:6px 14px;border-radius:20px;font-size:12px;font-weight:500;border:1.5px solid}
 .month-nav{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:20px}
-.mtab{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text-2);transition:all .15s}
-.mtab:hover{border-color:var(--text-2)}
+.mtab{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text-2)}
 .mtab.active{background:var(--text-1);color:#fff;border-color:var(--text-1)}
 .clinic-section{margin-bottom:28px}
 .clinic-hdr{display:flex;align-items:center;gap:8px;margin-bottom:10px}
@@ -51,7 +49,7 @@ body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:
 .vel-prac{display:grid;grid-template-columns:100px 1fr 36px;gap:8px;align-items:center;font-size:11px}
 .vel-name{color:var(--text-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .vel-bar-bg{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
-.vel-bar-fill{height:100%;border-radius:3px;transition:width .4s}
+.vel-bar-fill{height:100%;border-radius:3px}
 .vel-pct{font-size:11px;font-weight:600;text-align:right}
 .loader{text-align:center;padding:60px 20px;color:var(--text-3);font-size:13px}
 </style>
@@ -59,68 +57,155 @@ body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:
 <body>
 <div class="app">
   <div class="hdr">
-    <div>
-      <h1>Galston Clinic Tracker</h1>
-      <p id="hdr-sub">Loading…</p>
-    </div>
+    <div><h1>Galston Clinic Tracker</h1><p id="hdr-sub">Loading...</p></div>
     <button class="refresh-btn" id="refresh-btn" onclick="triggerScan()">Scan now</button>
   </div>
   <div class="summary" id="summary"></div>
   <div class="month-nav" id="month-nav"></div>
-  <div id="content"><div class="loader">Loading data…</div></div>
+  <div id="content"><div class="loader">Loading data...</div></div>
 </div>
 <script>
-const DAYS=['Mon','Tue','Wed','Thu','Fri'];
-const COL={galston:'#3266AD',bot:'#D85A30'};
-const occColor=v=>v>=75?'#C42B2B':v>=50?'#C47D00':v>=25?'#B56A00':'#3D9A22';
-let allScans=[],curMonth=null;
+var COL={galston:'#3266AD',bot:'#D85A30'};
+var allScans=[];
+var curMonth=null;
 
-async function fetchScans(){const r=await fetch('/api/scans');if(!r.ok)throw new Error('API '+r.status);return r.json();}
+function occColor(v){return v>=75?'#C42B2B':v>=50?'#C47D00':v>=25?'#B56A00':'#3D9A22';}
 
-async function triggerScan(){
-  const btn=document.getElementById('refresh-btn');
-  btn.disabled=true;btn.textContent='Scanning…';
-  try{await fetch('/api/scan',{method:'POST'});await loadAll();}
-  catch(e){alert('Scan failed: '+e.message);}
-  finally{btn.disabled=false;btn.textContent='Scan now';}
+function fetchScans(){
+  return fetch('/api/scans').then(function(r){
+    if(!r.ok) throw new Error('API error '+r.status);
+    return r.json();
+  });
 }
 
-async function loadAll(){
-  try{
-    allScans=await fetchScans();
-    if(!allScans.length){document.getElementById('content').innerHTML='<div class="loader">No scans yet — click Scan now to start.</div>';return;}
-    const latest=allScans[allScans.length-1];
-    document.getElementById('hdr-sub').textContent='Last scanned '+new Date(latest.ts).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+' · '+allScans.length+' total scans';
+function triggerScan(){
+  var btn=document.getElementById('refresh-btn');
+  btn.disabled=true; btn.textContent='Scanning...';
+  fetch('/api/scan',{method:'POST'})
+    .then(function(){return loadAll();})
+    .catch(function(e){alert('Scan failed: '+e.message);})
+    .finally(function(){btn.disabled=false;btn.textContent='Scan now';});
+}
+
+function loadAll(){
+  return fetchScans().then(function(scans){
+    allScans=scans;
+    if(!scans||!scans.length){
+      document.getElementById('content').innerHTML='<div class="loader">No scans yet - click Scan now to start.</div>';
+      document.getElementById('hdr-sub').textContent='No data yet';
+      return;
+    }
+    var latest=scans[scans.length-1];
+    document.getElementById('hdr-sub').textContent='Last scanned '+new Date(latest.ts).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})+' - '+scans.length+' scans';
     renderSummary(latest);
     renderMonthNav();
     renderMonth();
-  }catch(e){document.getElementById('content').innerHTML='<div class="loader">Error: '+e.message+'</div>';}
+  }).catch(function(e){
+    document.getElementById('content').innerHTML='<div class="loader">Error: '+e.message+'</div>';
+  });
 }
 
 function renderSummary(scan){
-  document.getElementById('summary').innerHTML=Object.entries(scan.clinics).map(([key,clinic])=>{
-    let tc=0,tb=0;
-    Object.values(clinic.pracs).forEach(p=>{tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});
-    const pct=tc>0?Math.round((tb/tc)*100):0,col=occColor(pct);
-    return`<span class="pill" style="color:${col};border-color:${col}20;background:${col}08"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${COL[key]};margin-right:5px;vertical-align:middle"></span>${clinic.name.split(' ').slice(0,2).join(' ')}: ${pct}%</span>`;
-  }).join('');
+  var html='';
+  Object.entries(scan.clinics).forEach(function(entry){
+    var key=entry[0],clinic=entry[1];
+    var tc=0,tb=0;
+    Object.values(clinic.pracs).forEach(function(p){tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});
+    var pct=tc>0?Math.round((tb/tc)*100):0;
+    var col=occColor(pct);
+    html+='<span class="pill" style="color:'+col+';border-color:'+col+'33;background:'+col+'11"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:'+COL[key]+';margin-right:5px;vertical-align:middle"></span>'+clinic.name.split(' ').slice(0,2).join(' ')+': '+pct+'%</span>';
+  });
+  document.getElementById('summary').innerHTML=html;
 }
 
-function getMonthKey(ws){const[y,m]=ws.split('-');return`${y}-${m}`;}
-function monthLabel(key){const[y,m]=key.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-AU',{month:'long',year:'numeric'});}
+function getMonthKey(ws){var p=ws.split('-');return p[0]+'-'+p[1];}
+function monthLabel(key){var p=key.split('-').map(Number);return new Date(p[0],p[1]-1,1).toLocaleDateString('en-AU',{month:'long',year:'numeric'});}
 
 function renderMonthNav(){
-  const months=[...new Set(allScans.map(s=>getMonthKey(s.weekStart)))].sort().reverse();
-  if(!curMonth||!months.includes(curMonth))curMonth=months[0];
-  document.getElementById('month-nav').innerHTML=months.map(m=>`<button class="mtab${m===curMonth?' active':''}" onclick="selectMonth('${m}')">${monthLabel(m)}</button>`).join('');
+  var seen={};
+  allScans.forEach(function(s){seen[getMonthKey(s.weekStart)]=true;});
+  var months=Object.keys(seen).sort().reverse();
+  if(!curMonth||months.indexOf(curMonth)<0) curMonth=months[0];
+  document.getElementById('month-nav').innerHTML=months.map(function(m){
+    return '<button class="mtab'+(m===curMonth?' active':'')+'" onclick="selectMonth(\''+m+'\')">'+monthLabel(m)+'</button>';
+  }).join('');
 }
 
 function selectMonth(m){curMonth=m;renderMonthNav();renderMonth();}
 
 function getCurrentWeekStart(){
-  const now=new Date(),dow=now.getDay(),mon=new Date(now);
+  var now=new Date(),dow=now.getDay(),mon=new Date(now);
   mon.setDate(now.getDate()-(dow===0?6:dow-1));
-  return`${mon.getFullYear()}-${mon.getMonth()+1}-${mon.getDate()}`;
+  return mon.getFullYear()+'-'+(mon.getMonth()+1)+'-'+mon.getDate();
 }
 
-function fmtTime(ts
+function fmtTime(ts){return new Date(ts).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
+
+function renderMonth(){
+  var monthScans=allScans.filter(function(s){return getMonthKey(s.weekStart)===curMonth;});
+  var weekMap={};
+  monthScans.forEach(function(s){if(!weekMap[s.weekStart])weekMap[s.weekStart]=[];weekMap[s.weekStart].push(s);});
+  var weeks=Object.keys(weekMap).sort().reverse();
+  var currentWS=getCurrentWeekStart();
+  var html='';
+  weeks.forEach(function(ws){
+    var scans=weekMap[ws];
+    var latest=scans[scans.length-1];
+    var isCurrent=(ws===currentWS);
+    html+='<div class="week-block"><div class="week-lbl"><span>'+latest.weekLabel+'</span>'+(isCurrent?'<span class="current-tag">current week</span>':'')+'<span class="scan-tag">'+scans.length+' scan'+(scans.length>1?'s':'')+' - latest '+fmtTime(latest.ts)+'</span></div>';
+    if(scans.length>1) html+=renderVelocity(scans);
+    Object.entries(latest.clinics).forEach(function(entry){html+=renderClinicGrid(entry[0],entry[1],latest.dayLabels);});
+    html+='</div>';
+  });
+  document.getElementById('content').innerHTML=html||'<div class="loader">No data for this month.</div>';
+}
+
+function renderVelocity(scans){
+  var latest=scans[scans.length-1];
+  var rows='';
+  Object.entries(latest.clinics).forEach(function(ce){
+    var ck=ce[0],clinic=ce[1];
+    Object.values(clinic.pracs).forEach(function(prac){
+      if(!prac.weekTotal.cap) return;
+      var occ2=prac.weekTotal.occ,col=COL[ck];
+      rows+='<div class="vel-prac"><span class="vel-name">'+prac.short+'</span><div class="vel-bar-bg"><div class="vel-bar-fill" style="width:'+occ2+'%;background:'+col+'"></div></div><span class="vel-pct" style="color:'+occColor(occ2)+'">'+occ2+'%</span></div>';
+    });
+  });
+  if(!rows) return '';
+  return '<div class="vel-row"><h3>Booking velocity - '+scans.length+' scans this week</h3><div class="vel-chart">'+rows+'</div></div>';
+}
+
+function renderClinicGrid(ck,clinic,dayLabels){
+  var pracs=Object.values(clinic.pracs).filter(function(p){return p.weekTotal.cap>0;});
+  if(!pracs.length) return '';
+  var tc=0,tb=0;
+  pracs.forEach(function(p){tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});
+  var clinicOcc=tc>0?Math.round((tb/tc)*100):0;
+  var color=COL[ck];
+  var cols='140px repeat(5,1fr) 56px';
+  var html='<div class="clinic-section"><div class="clinic-hdr"><span class="clinic-dot" style="background:'+color+'"></span><span class="clinic-hdr-name">'+clinic.name+'</span><span class="clinic-hdr-occ">'+clinicOcc+'% this week - '+tb+'/'+tc+'</span></div><div class="grid">';
+  html+='<div class="grid-row header" style="grid-template-columns:'+cols+'"><div class="cell name-cell"><span class="day-hdr">Practitioner</span></div>'+dayLabels.map(function(d){return '<div class="cell"><span class="day-hdr">'+d+'</span></div>';}).join('')+'<div class="cell"><span class="day-hdr">Week</span></div></div>';
+  Object.values(clinic.pracs).forEach(function(prac){
+    if(!prac.weekTotal.cap) return;
+    var days=Object.values(prac.days);
+    var wOcc=prac.weekTotal.occ,wCol=occColor(wOcc);
+    html+='<div class="grid-row" style="grid-template-columns:'+cols+'"><div class="cell name-cell"><div class="prac-name">'+prac.name+'</div><div class="prac-role">'+prac.role+'</div></div>';
+    days.forEach(function(day){
+      if(day.off||day.cap===0){html+='<div class="cell"><span class="off">-</span></div>';}
+      else if(day.error||day.free===null){html+='<div class="cell"><span class="off">?</span></div>';}
+      else{var col=occColor(day.occ);html+='<div class="cell" style="background:'+col+'11"><span class="occ-pct" style="color:'+col+'">'+day.occ+'%</span><span class="occ-sub">'+day.booked+'/'+day.cap+'</span><div class="occ-bar"><div class="occ-fill" style="width:'+day.occ+'%;background:'+col+'"></div></div></div>';}
+    });
+    html+='<div class="cell" style="background:'+wCol+'11"><span class="occ-pct" style="color:'+wCol+'">'+wOcc+'%</span><span class="occ-sub">'+prac.weekTotal.booked+'/'+prac.weekTotal.cap+'</span></div></div>';
+  });
+  html+='</div></div>';
+  return html;
+}
+
+window.selectMonth=selectMonth;
+window.triggerScan=triggerScan;
+window.loadAll=loadAll;
+loadAll();
+setInterval(loadAll,600000);
+</script>
+</body>
+</html>
