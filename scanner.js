@@ -10,8 +10,8 @@
 //
 // 3. TODAY'S ELAPSED SLOTS: Slots whose time has passed are removed from the
 //    API whether booked or not. Fix: compare each slot against Sydney time.
-//    If slot time <= now → it elapsed (record as open). If slot time > now but
-//    missing → it was booked. Only slots still in future count as free.
+//    If slot time <= now it elapsed (record as open). If slot time > now but
+//    missing it was booked.
 
 const https = require('https');
 const fs    = require('fs');
@@ -42,8 +42,6 @@ const CLINICS = [
 
 const DATA_FILE     = path.join(__dirname, 'data', 'scans.json');
 const BASELINE_FILE = path.join(__dirname, 'data', 'baselines.json');
-
-// ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 function fetchJson(host, urlPath) {
   return new Promise((resolve, reject) => {
@@ -89,8 +87,6 @@ function getWeekDays(offsetWeeks) {
 const fmtDay  = ds => { const[y,m,d]=ds.split('-').map(Number); return new Date(y,m-1,d).toLocaleDateString('en-AU',{weekday:'short',day:'numeric',month:'short'}); };
 const fmtWeek = days => `${fmtDay(days[0])} \u2013 ${fmtDay(days[6])}`;
 
-// ─── PERSISTENCE ─────────────────────────────────────────────────────────────
-
 function loadData() {
   try { if(fs.existsSync(DATA_FILE)) return JSON.parse(fs.readFileSync(DATA_FILE,'utf8')); }
   catch(e) { console.error('loadData:', e.message); }
@@ -109,10 +105,6 @@ function saveBaselines(b) {
   if(!fs.existsSync(path.dirname(BASELINE_FILE))) fs.mkdirSync(path.dirname(BASELINE_FILE),{recursive:true});
   fs.writeFileSync(BASELINE_FILE, JSON.stringify(b,null,2));
 }
-
-// ─── BASELINE SCAN ───────────────────────────────────────────────────────────
-// Runs once per day at midnight Sydney. Scans the day 56 days from now.
-// At 8 weeks out all slots are completely free = true capacity for that day.
 
 async function runBaselineScan() {
   const targetDate = getSydneyDateStr(56);
@@ -141,7 +133,6 @@ async function runBaselineScan() {
     if (!baselines[targetDate][clinicKey]) baselines[targetDate][clinicKey]={};
     baselines[targetDate][clinicKey][pracId] = {
       free,
-      // Store slot times for elapsed-slot logic when this day becomes today
       slots: slots.map(s=>({hour:s.hour, minute:s.minute})),
       ts
     };
@@ -149,11 +140,9 @@ async function runBaselineScan() {
   });
 
   saveBaselines(baselines);
-  console.log(`  ✓ Baseline saved for ${targetDate}`);
+  console.log(`  Baseline saved for ${targetDate}`);
   return baselines;
 }
-
-// ─── REGULAR SCAN ────────────────────────────────────────────────────────────
 
 async function runScan() {
   const ts        = new Date().toISOString();
@@ -168,7 +157,6 @@ async function runScan() {
 
   console.log(`\n[SCAN ${ts}] ${weeks[0].weekLabel} -> ${weeks[4].weekLabel}`);
 
-  // Only fetch today and future days — past days are frozen from previous scans
   const allTasks = [];
   for (const week of weeks)
     for (const clinic of CLINICS)
@@ -192,7 +180,6 @@ async function runScan() {
     idx[`${t.clinic.key}|${t.prac.id}|${t.day}`] = r.status==='fulfilled' ? r.value : {free:null,slots:[],error:r.reason?.message};
   });
 
-  // Get previous scan to carry forward past days
   const data     = loadData();
   const prevScan = data.scans[data.scans.length-1]||null;
 
@@ -210,7 +197,6 @@ async function runScan() {
           const cap = prac.cap[getDow(day)]||0;
           if (!cap) { dayData[day]={cap:0,free:null,booked:null,occ:null,off:true}; continue; }
 
-          // ── PAST: carry forward frozen data ──
           if (isPast(day)) {
             const prev = getPrevDayData(prevScan, clinic.key, prac.id, day);
             if (prev && prev.booked!==null) {
@@ -228,40 +214,33 @@ async function runScan() {
           if (!r||r.free===null) { dayData[day]={cap,free:null,booked:null,occ:null,error:true}; continue; }
 
           if (isToday(day)) {
-            // ── TODAY: use baseline slots to separate booked vs elapsed ──
             if (baseline && baseline.slots && baseline.slots.length>0) {
               const currentSlotKeys = new Set(r.slots.map(s=>`${s.hour}:${s.minute}`));
               let booked=0, elapsedOpen=0;
-
               baseline.slots.forEach(s => {
                 const slotKey  = `${s.hour}:${s.minute}`;
                 const slotMins = s.hour*60+s.minute;
                 if (!currentSlotKeys.has(slotKey)) {
-                  // Slot is gone — elapsed (time passed) or booked (future but missing)?
-                  if (slotMins <= nowMins) elapsedOpen++; // time has passed, was never booked
-                  else booked++;                           // still in future but gone = booked
+                  if (slotMins <= nowMins) elapsedOpen++;
+                  else booked++;
                 }
               });
-
               const totalCap = baseline.slots.length;
               const occ      = totalCap>0 ? Math.round((booked/totalCap)*100) : 0;
               dayData[day]   = {cap:totalCap, free:r.free, booked, elapsedOpen, occ, today:true};
               wCap+=totalCap; wBooked+=booked;
             } else {
-              // No baseline for today yet — can't distinguish elapsed vs booked
               dayData[day]={cap, free:r.free, booked:null, occ:null, today:true, noBaseline:true};
             }
             continue;
           }
 
-          // ── FUTURE: baseline comparison ──
           if (baseline && baseline.free>0) {
             const booked = Math.max(0, baseline.free - r.free);
             const occ    = Math.round((booked/baseline.free)*100);
             dayData[day] = {cap:baseline.free, free:r.free, booked, occ};
             wCap+=baseline.free; wBooked+=booked;
           } else {
-            // No baseline yet — fall back to hardcoded cap (less accurate)
             const booked = Math.max(0, cap-r.free);
             const occ    = Math.round((booked/cap)*100);
             dayData[day] = {cap, free:r.free, booked, occ, noBaseline:true};
@@ -285,7 +264,7 @@ async function runScan() {
   data.scans.push(scanEntry);
   if(data.scans.length>10000) data.scans=data.scans.slice(-10000);
   saveData(data);
-  console.log(`  ✓ Saved. Total scans: ${data.scans.length}`);
+  console.log(`  Saved. Total scans: ${data.scans.length}`);
   return scanEntry;
 }
 
@@ -298,7 +277,7 @@ function getPrevDayData(prevScan, clinicKey, pracId, day) {
   return null;
 }
 
-module.exports = {runScan, runBaselineScan, loadData, loadBaselines, CLINICS};
+module.exports = {runScan, runBaselineScan, loadData, loadBaselines, saveBaselines, CLINICS};
 if (require.main===module) {
   const arg=process.argv[2];
   if(arg==='baseline') runBaselineScan().catch(console.error);
