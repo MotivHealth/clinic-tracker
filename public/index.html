@@ -35,7 +35,7 @@ body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:
 .grid-row{display:grid;border-bottom:1px solid var(--border)}
 .grid-row:last-child{border-bottom:none}
 .grid-row.hrow{background:var(--bg)}
-.cell{padding:7px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:50px}
+.cell{padding:7px 4px;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:54px}
 .name-cell{align-items:flex-start;padding:8px 12px;min-width:0}
 .pname{font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;width:100%}
 .prole{font-size:9px;color:var(--text-3);margin-top:1px}
@@ -44,6 +44,8 @@ body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:
 .osub{font-size:9px;color:var(--text-3);margin-top:1px}
 .obar{width:78%;height:3px;background:var(--border);border-radius:2px;margin-top:3px;overflow:hidden}
 .ofill{height:100%;border-radius:2px}
+.today-delta{font-size:9px;font-weight:600;margin-top:3px;color:#3D9A22}
+.today-delta.zero{color:var(--text-3);font-weight:400}
 .dash{font-size:12px;color:var(--text-3)}
 .clinic-hdr{display:flex;align-items:center;gap:8px;margin-bottom:8px}
 .cdot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
@@ -59,6 +61,8 @@ body{background:var(--bg);font-family:var(--font);color:var(--text-1);font-size:
 .vpct{font-size:11px;font-weight:700;text-align:right}
 .loader{text-align:center;padding:50px;color:var(--text-3);font-size:13px}
 .divider{height:1px;background:var(--border);margin:20px 0}
+.today-legend{font-size:11px;color:var(--text-3);margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.today-legend-dot{width:8px;height:8px;border-radius:50%;background:#3D9A22;display:inline-block}
 </style>
 </head>
 <body>
@@ -84,19 +88,275 @@ function occ(b,c){return c>0?Math.round((b/c)*100):0;}
 function occCol(v){return v>=75?'#C42B2B':v>=50?'#C47D00':v>=25?'#B56A00':'#3D9A22';}
 function fmtTime(ts){return new Date(ts).toLocaleString('en-AU',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});}
 function fetchScans(){return fetch('/api/scans').then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.json();});}
-function triggerScan(){var btn=document.getElementById('scan-btn');btn.disabled=true;btn.textContent='Scanning...';fetch('/api/scan',{method:'POST'}).then(function(){return loadAll();}).catch(function(e){alert('Scan failed: '+e.message);}).finally(function(){btn.disabled=false;btn.textContent='Scan now';});}
-function loadAll(){return fetchScans().then(function(scans){allScans=scans;if(!scans||!scans.length){document.getElementById('panel-current').innerHTML='<div class="loader">No scans yet</div>';document.getElementById('hdr-sub').textContent='No data yet';return;}var latest=scans[scans.length-1];document.getElementById('hdr-sub').textContent='Last scanned '+fmtTime(latest.ts)+' · '+scans.length+' scans · Every 30 min 24/7';renderSummary(latest);renderCurrentWeek(latest,scans);renderForwardWeeks(latest,scans);renderHistory(scans);}).catch(function(e){document.getElementById('panel-current').innerHTML='<div class="loader">Error: '+e.message+'</div>';});}
-function renderSummary(latest){var week0=latest.weeks?latest.weeks[0]:latest;if(!week0)return;var html='';Object.entries(week0.clinics).forEach(function(ce){var key=ce[0],clinic=ce[1],tc=0,tb=0;Object.values(clinic.pracs).forEach(function(p){tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});var pct=occ(tb,tc),col=occCol(pct);html+='<span class="pill" style="color:'+col+';border-color:'+col+'33;background:'+col+'0d"><span class="pill-dot" style="background:'+COL[key]+'"></span>'+clinic.name.split(' ').slice(0,2).join(' ')+': '+pct+'%</span>';});document.getElementById('summary').innerHTML=html;}
-function renderCurrentWeek(latest,allScans){var week0=latest.weeks?latest.weeks[0]:null;if(!week0){document.getElementById('panel-current').innerHTML='<div class="loader">No data</div>';return;}var ws=week0.weekStart;var weekScans=allScans.filter(function(s){return s.currentWeekStart===ws||(s.weeks&&s.weeks[0]&&s.weeks[0].weekStart===ws);});var html='';if(weekScans.length>1)html+=renderVelocity(weekScans);html+=renderWeekBlock(week0,weekScans.length,latest.ts,'current');document.getElementById('panel-current').innerHTML=html;}
-function renderForwardWeeks(latest,allScans){if(!latest.weeks||latest.weeks.length<2){document.getElementById('panel-forward').innerHTML='<div class="loader">No forward data yet</div>';return;}var html='<p class="future-note">Shows slots already booked in advance. Lower numbers are normal for weeks further away. Watch this fill up over time.</p>';for(var i=1;i<latest.weeks.length;i++){var week=latest.weeks[i];var ws=week.weekStart;var wScans=allScans.filter(function(s){return s.weeks&&s.weeks.some(function(w){return w.weekStart===ws;});});if(wScans.length>1){var lw=wScans[wScans.length-1].weeks.find(function(w){return w.weekStart===ws;});if(lw)html+=renderFillTrend(lw,wScans.length);}html+=renderWeekBlock(week,wScans.length,latest.ts,'future');if(i<latest.weeks.length-1)html+='<div class="divider"></div>';}document.getElementById('panel-forward').innerHTML=html;}
-function renderFillTrend(latestW,scanCount){var rows='';Object.entries(latestW.clinics).forEach(function(ce){var ck=ce[0],clinic=ce[1];Object.values(clinic.pracs).forEach(function(prac){if(!prac.weekTotal.cap)return;var p=prac.weekTotal.occ,col=COL[ck];rows+='<div class="vel-row"><span class="vel-name">'+prac.short+'</span><div class="vbar-bg"><div class="vbar-fill" style="width:'+p+'%;background:'+col+'"></div></div><span class="vpct" style="color:'+occCol(p)+'">'+p+'%</span></div>';});});if(!rows)return'';return'<div class="vel"><h3>Fill rate across '+scanCount+' scans</h3>'+rows+'</div>';}
-function renderWeekBlock(week,scanCount,ts,type){var badge=type==='current'?'<span class="badge badge-current">current week</span>':type==='future'?'<span class="badge badge-future">+'+week.weekOffset+'w ahead</span>':'<span class="badge badge-past">past</span>';var html='<div class="week-block"><div class="week-hdr"><span class="week-title">'+week.weekLabel+'</span>'+badge+'<span class="scan-info">'+scanCount+' scan'+(scanCount!==1?'s':'')+' · latest '+fmtTime(ts)+'</span></div>';Object.entries(week.clinics).forEach(function(ce){html+=renderClinicGrid(ce[0],ce[1],week.dayLabels);});html+='</div>';return html;}
-function renderClinicGrid(ck,clinic,dayLabels){var pracs=Object.values(clinic.pracs).filter(function(p){return p.weekTotal.cap>0;});if(!pracs.length)return'';var tc=0,tb=0;pracs.forEach(function(p){tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});var co=occ(tb,tc),col=COL[ck];var cols='130px repeat(7,1fr) 54px';var html='<div class="clinic-block"><div class="clinic-hdr"><span class="cdot" style="background:'+col+'"></span><span class="cname">'+clinic.name+'</span><span class="cocc">'+co+'% · '+tb+'/'+tc+'</span></div><div class="grid"><div class="grid-row hrow" style="grid-template-columns:'+cols+'"><div class="cell name-cell"><span class="dhdr">Practitioner</span></div>'+dayLabels.map(function(d){return'<div class="cell"><span class="dhdr">'+d+'</span></div>';}).join('')+'<div class="cell"><span class="dhdr">Week</span></div></div>';Object.values(clinic.pracs).forEach(function(prac){if(!prac.weekTotal.cap)return;var wOcc=prac.weekTotal.occ,wCol=occCol(wOcc);html+='<div class="grid-row" style="grid-template-columns:'+cols+'"><div class="cell name-cell"><div class="pname">'+prac.name+'</div><div class="prole">'+prac.role+'</div></div>';Object.values(prac.days).forEach(function(day){if(day.off||day.cap===0){html+='<div class="cell"><span class="dash">—</span></div>';}else if(day.booked===null){html+='<div class="cell"><span class="dash">?</span></div>';}else{var dc=occCol(day.occ);html+='<div class="cell" style="background:'+dc+'0d"><span class="occ" style="color:'+dc+'">'+day.occ+'%</span><span class="osub">'+day.booked+'/'+day.cap+'</span><div class="obar"><div class="ofill" style="width:'+day.occ+'%;background:'+dc+'"></div></div></div>';}});html+='<div class="cell" style="background:'+wCol+'0d"><span class="occ" style="color:'+wCol+'">'+wOcc+'%</span><span class="osub">'+prac.weekTotal.booked+'/'+prac.weekTotal.cap+'</span></div></div>';});html+='</div></div>';return html;}
-function renderVelocity(weekScans){var latest=weekScans[weekScans.length-1];var week=latest.weeks?latest.weeks[0]:latest;if(!week)return'';var rows='';Object.entries(week.clinics).forEach(function(ce){var ck=ce[0],clinic=ce[1];Object.values(clinic.pracs).forEach(function(prac){if(!prac.weekTotal.cap)return;var p=prac.weekTotal.occ,col=COL[ck];rows+='<div class="vel-row"><span class="vel-name">'+prac.short+'</span><div class="vbar-bg"><div class="vbar-fill" style="width:'+p+'%;background:'+col+'"></div></div><span class="vpct" style="color:'+occCol(p)+'">'+p+'%</span></div>';});});if(!rows)return'';return'<div class="vel"><h3>Booking velocity · '+weekScans.length+' scans</h3>'+rows+'</div>';}
+
+function triggerScan(){
+  var btn=document.getElementById('scan-btn');
+  btn.disabled=true;btn.textContent='Scanning...';
+  fetch('/api/scan',{method:'POST'}).then(function(){return loadAll();}).catch(function(e){alert('Scan failed: '+e.message);}).finally(function(){btn.disabled=false;btn.textContent='Scan now';});
+}
+
+function loadAll(){
+  return fetchScans().then(function(scans){
+    allScans=scans;
+    if(!scans||!scans.length){
+      document.getElementById('panel-current').innerHTML='<div class="loader">No scans yet</div>';
+      document.getElementById('hdr-sub').textContent='No data yet';
+      return;
+    }
+    var latest=scans[scans.length-1];
+    document.getElementById('hdr-sub').textContent='Last scanned '+fmtTime(latest.ts)+' · '+scans.length+' scans · Every 5 min 24/7';
+    renderSummary(latest);
+    renderCurrentWeek(latest,scans);
+    renderForwardWeeks(latest,scans);
+    renderHistory(scans);
+  }).catch(function(e){
+    document.getElementById('panel-current').innerHTML='<div class="loader">Error: '+e.message+'</div>';
+  });
+}
+
+function renderSummary(latest){
+  var week0=latest.weeks?latest.weeks[0]:latest;
+  if(!week0)return;
+  var html='';
+  Object.entries(week0.clinics).forEach(function(ce){
+    var key=ce[0],clinic=ce[1],tc=0,tb=0;
+    Object.values(clinic.pracs).forEach(function(p){tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});
+    var pct=occ(tb,tc),col=occCol(pct);
+    html+='<span class="pill" style="color:'+col+';border-color:'+col+'33;background:'+col+'0d"><span class="pill-dot" style="background:'+COL[key]+'"></span>'+clinic.name.split(' ').slice(0,2).join(' ')+': '+pct+'%</span>';
+  });
+  document.getElementById('summary').innerHTML=html;
+}
+
+// ─── TODAY DELTA ─────────────────────────────────────────────────────────────
+// For the current week view, compute how many bookings were made TODAY
+// for each day in the week, by comparing the first and last scan of today.
+function computeTodayDeltas(allScans, currentWeekStart) {
+  // Get all scans from today (same date as latest scan)
+  var latest    = allScans[allScans.length-1];
+  var latestDate = latest.ts.slice(0,10); // YYYY-MM-DD
+
+  var todayScans = allScans.filter(function(s){
+    return s.ts.slice(0,10) === latestDate &&
+           (s.currentWeekStart === currentWeekStart ||
+            (s.weeks && s.weeks[0] && s.weeks[0].weekStart === currentWeekStart));
+  });
+
+  if(todayScans.length < 2) return {}; // need at least 2 scans today to compute delta
+
+  var firstScan = todayScans[0];
+  var lastScan  = todayScans[todayScans.length-1];
+
+  // Build delta: for each clinicKey/pracId/day, how many bookings happened today?
+  var deltas = {};
+
+  var firstWeek0 = firstScan.weeks ? firstScan.weeks[0] : firstScan;
+  var lastWeek0  = lastScan.weeks  ? lastScan.weeks[0]  : lastScan;
+
+  if(!firstWeek0 || !lastWeek0) return {};
+
+  // Check all 5 weeks in latest scan (bookings can be made for any future week)
+  var lastWeeks = lastScan.weeks || [lastScan];
+  var firstWeeks = firstScan.weeks || [firstScan];
+
+  lastWeeks.forEach(function(lastWeek, wi) {
+    var firstWeek = firstWeeks[wi];
+    if(!firstWeek) return;
+
+    Object.entries(lastWeek.clinics).forEach(function(ce) {
+      var ck = ce[0], clinic = ce[1];
+      Object.entries(clinic.pracs).forEach(function(pe) {
+        var pracId = pe[0], prac = pe[1];
+        var firstPrac = firstWeek.clinics[ck] && firstWeek.clinics[ck].pracs[pracId];
+        if(!firstPrac) return;
+
+        Object.entries(prac.days).forEach(function(de) {
+          var day = de[0], dayData = de[1];
+          var firstDay = firstPrac.days && firstPrac.days[day];
+          if(!firstDay) return;
+
+          // Delta = reduction in free slots from first scan today to latest scan
+          // (bookings made today for this day)
+          var firstFree = firstDay.free;
+          var lastFree  = dayData.free;
+
+          if(firstFree !== null && lastFree !== null && firstFree > lastFree) {
+            var key = ck+'|'+pracId+'|'+day;
+            deltas[key] = (deltas[key]||0) + (firstFree - lastFree);
+          }
+        });
+      });
+    });
+  });
+
+  return deltas;
+}
+
+// ─── CURRENT WEEK ─────────────────────────────────────────────────────────────
+function renderCurrentWeek(latest, allScans){
+  var week0=latest.weeks?latest.weeks[0]:null;
+  if(!week0){document.getElementById('panel-current').innerHTML='<div class="loader">No data</div>';return;}
+
+  var ws=week0.weekStart;
+  var weekScans=allScans.filter(function(s){return s.currentWeekStart===ws||(s.weeks&&s.weeks[0]&&s.weeks[0].weekStart===ws);});
+
+  // Compute today's booking deltas across ALL weeks (bookings made today for any day)
+  var todayDeltas = computeTodayDeltas(allScans, ws);
+
+  var html='';
+  if(weekScans.length>1) html+=renderVelocity(weekScans);
+
+  // Today delta legend if we have any
+  var hasTodayDeltas = Object.keys(todayDeltas).length > 0;
+  if(hasTodayDeltas){
+    html+='<div class="today-legend"><span class="today-legend-dot"></span>Green numbers show bookings made today for each day</div>';
+  }
+
+  html+=renderWeekBlock(week0, weekScans.length, latest.ts, 'current', todayDeltas);
+  document.getElementById('panel-current').innerHTML=html;
+}
+
+// ─── FORWARD WEEKS ────────────────────────────────────────────────────────────
+function renderForwardWeeks(latest, allScans){
+  if(!latest.weeks||latest.weeks.length<2){
+    document.getElementById('panel-forward').innerHTML='<div class="loader">No forward data yet</div>';
+    return;
+  }
+  var ws=latest.weeks[0].weekStart;
+  var todayDeltas=computeTodayDeltas(allScans, ws);
+  var html='<p class="future-note">Shows slots already booked in advance. Lower numbers are normal for weeks further away. Watch each week fill up over time.</p>';
+  if(Object.keys(todayDeltas).length>0){
+    html+='<div class="today-legend"><span class="today-legend-dot"></span>Green numbers show bookings made today for each day</div>';
+  }
+  for(var i=1;i<latest.weeks.length;i++){
+    var week=latest.weeks[i];
+    var wws=week.weekStart;
+    var wScans=allScans.filter(function(s){return s.weeks&&s.weeks.some(function(w){return w.weekStart===wws;});});
+    if(wScans.length>1){var lw=wScans[wScans.length-1].weeks.find(function(w){return w.weekStart===wws;});if(lw)html+=renderFillTrend(lw,wScans.length);}
+    html+=renderWeekBlock(week,wScans.length,latest.ts,'future',todayDeltas);
+    if(i<latest.weeks.length-1)html+='<div class="divider"></div>';
+  }
+  document.getElementById('panel-forward').innerHTML=html;
+}
+
+function renderFillTrend(latestW,scanCount){
+  var rows='';
+  Object.entries(latestW.clinics).forEach(function(ce){
+    var ck=ce[0],clinic=ce[1];
+    Object.values(clinic.pracs).forEach(function(prac){
+      if(!prac.weekTotal.cap)return;
+      var p=prac.weekTotal.occ,col=COL[ck];
+      rows+='<div class="vel-row"><span class="vel-name">'+prac.short+'</span><div class="vbar-bg"><div class="vbar-fill" style="width:'+p+'%;background:'+col+'"></div></div><span class="vpct" style="color:'+occCol(p)+'">'+p+'%</span></div>';
+    });
+  });
+  if(!rows)return'';
+  return'<div class="vel"><h3>Fill rate across '+scanCount+' scans</h3>'+rows+'</div>';
+}
+
+// ─── WEEK BLOCK ──────────────────────────────────────────────────────────────
+function renderWeekBlock(week,scanCount,ts,type,todayDeltas){
+  var badge=type==='current'?'<span class="badge badge-current">current week</span>':type==='future'?'<span class="badge badge-future">+'+week.weekOffset+'w ahead</span>':'<span class="badge badge-past">past</span>';
+  var html='<div class="week-block"><div class="week-hdr"><span class="week-title">'+week.weekLabel+'</span>'+badge+'<span class="scan-info">'+scanCount+' scan'+(scanCount!==1?'s':'')+' · latest '+fmtTime(ts)+'</span></div>';
+  Object.entries(week.clinics).forEach(function(ce){html+=renderClinicGrid(ce[0],ce[1],week.dayLabels,week,todayDeltas||{});});
+  html+='</div>';
+  return html;
+}
+
+// ─── CLINIC GRID ─────────────────────────────────────────────────────────────
+function renderClinicGrid(ck,clinic,dayLabels,week,todayDeltas){
+  var pracs=Object.values(clinic.pracs).filter(function(p){return p.weekTotal.cap>0;});
+  if(!pracs.length)return'';
+  var tc=0,tb=0;
+  pracs.forEach(function(p){tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});
+  var co=occ(tb,tc),col=COL[ck];
+  var cols='130px repeat(7,1fr) 54px';
+  var html='<div class="clinic-block"><div class="clinic-hdr"><span class="cdot" style="background:'+col+'"></span><span class="cname">'+clinic.name+'</span><span class="cocc">'+co+'% · '+tb+'/'+tc+'</span></div><div class="grid">';
+  html+='<div class="grid-row hrow" style="grid-template-columns:'+cols+'"><div class="cell name-cell"><span class="dhdr">Practitioner</span></div>'+dayLabels.map(function(d){return'<div class="cell"><span class="dhdr">'+d+'</span></div>';}).join('')+'<div class="cell"><span class="dhdr">Week</span></div></div>';
+
+  Object.values(clinic.pracs).forEach(function(prac){
+    if(!prac.weekTotal.cap)return;
+    var wOcc=prac.weekTotal.occ,wCol=occCol(wOcc);
+    html+='<div class="grid-row" style="grid-template-columns:'+cols+'"><div class="cell name-cell"><div class="pname">'+prac.name+'</div><div class="prole">'+prac.role+'</div></div>';
+
+    // Find this prac's ID from clinic object
+    var pracId=null;
+    Object.entries(clinic.pracs).forEach(function(pe){if(pe[1]===prac)pracId=pe[0];});
+
+    Object.entries(prac.days).forEach(function(de){
+      var day=de[0],d=de[1];
+      if(d.off||d.cap===0){
+        html+='<div class="cell"><span class="dash">—</span></div>';
+      } else if(d.booked===null&&!d.noBaseline){
+        html+='<div class="cell"><span class="dash">?</span></div>';
+      } else {
+        var dc=occCol(d.occ||0);
+        // Look up today's delta for this specific prac+day
+        var deltaKey = ck+'|'+pracId+'|'+day;
+        var delta    = todayDeltas && todayDeltas[deltaKey];
+        var deltaHtml='';
+        if(delta>0){
+          deltaHtml='<span class="today-delta">+'+delta+' today</span>';
+        } else if(todayDeltas && Object.keys(todayDeltas).length>0){
+          deltaHtml='<span class="today-delta zero">+0 today</span>';
+        }
+        html+='<div class="cell" style="background:'+dc+'0d">'
+          +'<span class="occ" style="color:'+dc+'">'+(d.occ||0)+'%</span>'
+          +'<span class="osub">'+(d.booked||0)+'/'+d.cap+(d.noBaseline?'~':'')+'</span>'
+          +'<div class="obar"><div class="ofill" style="width:'+(d.occ||0)+'%;background:'+dc+'"></div></div>'
+          +deltaHtml
+          +'</div>';
+      }
+    });
+
+    // Week total — show total bookings made today for this prac across all days
+    var weekDeltaTotal=0;
+    if(todayDeltas && pracId){
+      Object.keys(todayDeltas).forEach(function(k){
+        if(k.startsWith(ck+'|'+pracId+'|')) weekDeltaTotal+=todayDeltas[k];
+      });
+    }
+    var weekDeltaHtml = weekDeltaTotal>0 ? '<span class="today-delta">+'+weekDeltaTotal+' today</span>' : '';
+
+    html+='<div class="cell" style="background:'+wCol+'0d">'
+      +'<span class="occ" style="color:'+wCol+'">'+wOcc+'%</span>'
+      +'<span class="osub">'+prac.weekTotal.booked+'/'+prac.weekTotal.cap+'</span>'
+      +weekDeltaHtml
+      +'</div>';
+
+    html+='</div>';
+  });
+
+  html+='</div></div>';
+  return html;
+}
+
+// ─── VELOCITY BAR ────────────────────────────────────────────────────────────
+function renderVelocity(weekScans){
+  var latest=weekScans[weekScans.length-1];
+  var week=latest.weeks?latest.weeks[0]:latest;
+  if(!week)return'';
+  var rows='';
+  Object.entries(week.clinics).forEach(function(ce){
+    var ck=ce[0],clinic=ce[1];
+    Object.values(clinic.pracs).forEach(function(prac){
+      if(!prac.weekTotal.cap)return;
+      var p=prac.weekTotal.occ,col=COL[ck];
+      rows+='<div class="vel-row"><span class="vel-name">'+prac.short+'</span><div class="vbar-bg"><div class="vbar-fill" style="width:'+p+'%;background:'+col+'"></div></div><span class="vpct" style="color:'+occCol(p)+'">'+p+'%</span></div>';
+    });
+  });
+  if(!rows)return'';
+  return'<div class="vel"><h3>Booking velocity · '+weekScans.length+' scans</h3>'+rows+'</div>';
+}
+
+// ─── HISTORY ─────────────────────────────────────────────────────────────────
 function renderHistory(scans){
-  if(!scans||!scans.length){document.getElementById('panel-history').innerHTML='<div class="loader">No history yet — check back as weeks pass.</div>';return;}
+  if(!scans||!scans.length){document.getElementById('panel-history').innerHTML='<div class="loader">No history yet</div>';return;}
   var byWeek={};
-  scans.forEach(function(s){var ws=s.currentWeekStart||(s.weeks&&s.weeks[0]&&s.weeks[0].weekStart)||(s.weekStart);if(!ws)return;if(!byWeek[ws])byWeek[ws]=[];byWeek[ws].push(s);});
+  scans.forEach(function(s){
+    var ws=s.currentWeekStart||(s.weeks&&s.weeks[0]&&s.weeks[0].weekStart)||(s.weekStart);
+    if(!ws)return;
+    if(!byWeek[ws])byWeek[ws]=[];
+    byWeek[ws].push(s);
+  });
   var weeks=Object.keys(byWeek).sort().reverse();
   var html='';
   weeks.forEach(function(ws,idx){
@@ -107,22 +367,27 @@ function renderHistory(scans){
     var tc=0,tb=0;
     Object.values(week.clinics).forEach(function(c){Object.values(c.pracs).forEach(function(p){tc+=p.weekTotal.cap;tb+=p.weekTotal.booked;});});
     var co=occ(tb,tc);
-    var isFirst=idx===0;
     html+='<div style="margin-bottom:32px">';
     html+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap">';
     html+='<span style="font-size:12px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.05em">'+week.weekLabel+'</span>';
-    if(isFirst)html+='<span class="badge badge-past">most recent</span>';
+    if(idx===0)html+='<span class="badge badge-past">most recent</span>';
     html+='<span style="font-size:10px;color:var(--text-3)">'+wScans.length+' scan'+(wScans.length!==1?'s':'')+' · latest '+fmtTime(latest.ts)+'</span>';
     html+='<span style="font-size:12px;font-weight:700;color:'+occCol(co)+';margin-left:auto">'+co+'% combined</span>';
     html+='</div>';
-    Object.entries(week.clinics).forEach(function(ce){html+=renderClinicGrid(ce[0],ce[1],week.dayLabels);});
+    Object.entries(week.clinics).forEach(function(ce){html+=renderClinicGrid(ce[0],ce[1],week.dayLabels,week,{});});
     if(wScans.length>1)html+=renderVelocity(wScans);
     if(idx<weeks.length-1)html+='<div class="divider"></div>';
     html+='</div>';
   });
   document.getElementById('panel-history').innerHTML=html||'<div class="loader">No history.</div>';
 }
-function showTab(name){document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});document.getElementById('panel-'+name).classList.add('active');document.querySelector('.tab[onclick="showTab(\''+name+'\')"]').classList.add('active');}
+
+function showTab(name){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.remove('active');});
+  document.querySelectorAll('.panel').forEach(function(p){p.classList.remove('active');});
+  document.getElementById('panel-'+name).classList.add('active');
+  document.querySelector('.tab[onclick="showTab(\''+name+'\')"]').classList.add('active');
+}
 window.showTab=showTab;window.triggerScan=triggerScan;window.loadAll=loadAll;
 loadAll();
 setInterval(loadAll,300000);
